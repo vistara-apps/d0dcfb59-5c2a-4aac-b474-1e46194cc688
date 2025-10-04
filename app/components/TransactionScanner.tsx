@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Search, AlertTriangle, CheckCircle, XCircle, Loader2, ExternalLink } from 'lucide-react';
+import { scanningService } from '@/app/lib/scanning';
 
 interface ScanResult {
   riskScore: number;
@@ -30,30 +31,48 @@ export function TransactionScanner() {
     setScanResult(null);
     setShowPremiumPrompt(false);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // Determine if input is a contract address or transaction hash
+      const isTxHash = txInput.startsWith('0x') && txInput.length === 66;
+      const isContractAddress = txInput.startsWith('0x') && txInput.length === 42;
 
-    // Mock scan result
-    const mockResult: ScanResult = {
-      riskScore: Math.floor(Math.random() * 100),
-      riskLevel: Math.random() > 0.7 ? 'danger' : Math.random() > 0.4 ? 'warning' : 'safe',
-      threats: [
-        'Unlimited token approval detected',
-        'Contract not verified on Etherscan',
-        'Similar to known scam pattern',
-      ].slice(0, Math.floor(Math.random() * 3) + 1),
-      contractAge: '12 days',
-      communityRating: 2.5,
-      details: {
-        isHoneypot: Math.random() > 0.8,
-        hasUnverifiedCode: Math.random() > 0.6,
-        hasHighRiskApprovals: Math.random() > 0.5,
-        suspiciousPatterns: ['Drainer pattern detected', 'Unusual gas usage'],
-      },
-    };
+      let scanResult: ScanResult | null = null;
 
-    setScanResult(mockResult);
-    setIsScanning(false);
+      if (isContractAddress) {
+        // Scan contract address
+        scanResult = await scanningService.scanContract(txInput);
+      } else if (isTxHash) {
+        // Scan transaction (placeholder for now)
+        scanResult = await scanningService.scanTransaction(txInput);
+        if (!scanResult) {
+          // Fallback: try to extract contract address from tx or show error
+          throw new Error('Transaction scanning not yet implemented. Please provide a contract address.');
+        }
+      } else {
+        throw new Error('Please enter a valid contract address (0x...) or transaction hash');
+      }
+
+      setScanResult(scanResult);
+    } catch (error) {
+      console.error('Scan failed:', error);
+      // Show error result
+      const errorResult: ScanResult = {
+        riskScore: 100,
+        riskLevel: 'danger',
+        threats: [error instanceof Error ? error.message : 'Scan failed'],
+        contractAge: 'Unknown',
+        communityRating: 0,
+        details: {
+          isHoneypot: false,
+          hasUnverifiedCode: true,
+          hasHighRiskApprovals: false,
+          suspiciousPatterns: ['Analysis failed'],
+        },
+      };
+      setScanResult(errorResult);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const getRiskBadgeClass = (level: string) => {

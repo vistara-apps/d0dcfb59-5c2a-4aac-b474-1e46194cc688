@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { Lock, Eye, AlertTriangle, CheckCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { privacyService } from '@/app/lib/privacy';
+import { ensAPI } from '@/app/lib/api/ens';
+import { PrivacyReport } from '@/app/types';
 
 interface PrivacyReport {
   walletAddress: string;
@@ -25,47 +28,51 @@ export function PrivacyChecker() {
 
     setIsChecking(true);
     setReport(null);
+    setShowPremiumPrompt(false);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // Resolve ENS name if provided
+      let resolvedAddress = walletAddress;
+      if (walletAddress.includes('.eth')) {
+        const resolved = await ensAPI.resolveName(walletAddress);
+        if (!resolved) {
+          throw new Error('ENS name could not be resolved');
+        }
+        resolvedAddress = resolved;
+      }
 
-    // Mock privacy report
-    const mockReport: PrivacyReport = {
-      walletAddress,
-      riskLevel: Math.random() > 0.6 ? 'high' : Math.random() > 0.3 ? 'medium' : 'low',
-      exposedPII: [
-        {
-          type: 'ENS Name',
-          value: 'alice.eth',
-          risk: 'Links wallet to real identity',
-        },
-        {
-          type: 'POAP Attendance',
-          value: 'ETHDenver 2024',
-          risk: 'Reveals physical location and event attendance',
-        },
-        {
-          type: 'NFT Collection',
-          value: 'Bored Ape #1234',
-          risk: 'High-value asset exposure',
-        },
-        {
-          type: 'Transaction Pattern',
-          value: 'Regular CEX deposits',
-          risk: 'Suggests KYC-linked exchange usage',
-        },
-      ],
-      recommendations: [
-        'Use separate wallets for different activities',
-        'Consider burning or transferring POAPs to a separate address',
-        'Avoid linking ENS to main wallet',
-        'Use privacy-focused protocols for sensitive transactions',
-        'Regularly rotate addresses for different use cases',
-      ],
-    };
+      // Perform privacy analysis
+      const privacyReport = await privacyService.analyzeWalletPrivacy(resolvedAddress);
 
-    setReport(mockReport);
-    setIsChecking(false);
+      setReport({
+        walletAddress: resolvedAddress,
+        riskLevel: privacyReport.riskLevel,
+        exposedPII: privacyReport.exposedPII.map(pii => ({
+          type: pii.type,
+          value: pii.value,
+          risk: pii.description, // Map to the expected format
+        })),
+        recommendations: privacyReport.recommendations,
+      });
+    } catch (error) {
+      console.error('Privacy check failed:', error);
+
+      // Show error report
+      const errorReport: PrivacyReport = {
+        walletAddress,
+        riskLevel: 'high',
+        exposedPII: [{
+          type: 'Error',
+          value: 'Analysis Failed',
+          risk: error instanceof Error ? error.message : 'Unknown error occurred',
+        }],
+        recommendations: ['Try again later or contact support'],
+      };
+
+      setReport(errorReport);
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   const getRiskColor = (level: string) => {
